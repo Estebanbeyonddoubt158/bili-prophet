@@ -2,7 +2,7 @@
 
 > 看视频前先知道值不值得看。AI 自动分析字幕，主页封面直出评级 + 概述 + 关键点，进度条标注时间轴。
 
-[![Greasy Fork](https://img.shields.io/badge/Greasy%20Fork-Install-brightgreen)](https://greasyfork.org) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Greasy Fork](https://img.shields.io/badge/Greasy%20Fork-Install-brightgreen)](https://greasyfork.org/zh-CN/scripts/569780-b%E7%AB%99%E5%85%88%E7%9F%A5) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ## 预览
 
@@ -11,9 +11,9 @@
 ![评级徽章](images/2.png)
 
 
-![设置面板](images/4.png)
+![设置面板](images/4.jpg)
 
-![复制功能](images/5.png)
+![复制功能](images/5.jpg)
 
 ## 功能
 
@@ -41,7 +41,7 @@
 ## 安装
 
 1. 安装 [Tampermonkey](https://www.tampermonkey.net/)
-2. 点击 [安装脚本](https://greasyfork.org) *(即将上线)*
+2. 点击 [安装脚本](https://greasyfork.org/zh-CN/scripts/569780-b%E7%AB%99%E5%85%88%E7%9F%A5)
 3. 打开设置面板，填入 LLM API 地址和 Key
 4. 回到 B站主页，等待封面出现评级标记
 

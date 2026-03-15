@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站先知
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      1.1.0
 // @description  看视频前先知道值不值得看。AI自动分析字幕，主页封面直出评级+概述+关键点，进度条标注时间轴
 // @author       Original Author + AI Enhanced
 // @match        *://www.bilibili.com/*
@@ -24,6 +24,14 @@
 (function() {
   'use strict';
 
+  // 默认评级评判标准（用户可在设置面板覆盖）
+  const DEFAULT_RATING_CRITERIA = `rating 评判标准（优先级从高到低）：
+1. 【最高优先级】视频制作质量：剪辑节奏、表达清晰度、信息组织是否合理
+2. 【高优先级】内容质量：论点是否有条理、信息密度、干货程度、是否有实际价值
+3. 【低优先级】信息时效性：仅作参考，不因内容可能过时而降级，改用 warning 字段标注
+4. 【最低优先级】其他因素：UP主名气、播放量等数据
+注意：即使视频涉及时效性话题（科技/教程/时事），只要制作和内容逻辑扎实，rating 不应降级。`;
+
   // ============================================================
   // 模块1: 配置管理
   // ============================================================
@@ -38,7 +46,8 @@
         temperature: 0.7,
         promptVersion: 'v1',
         targetLang: 'zh',
-        stream: true
+        stream: true,
+        ratingCriteria: ''
       },
       // 触发配置
       trigger: {
@@ -626,6 +635,9 @@
 ## 字幕内容
 ${truncatedSubtitle}
 
+## 评级标准
+${Config.get('llm.ratingCriteria') || DEFAULT_RATING_CRITERIA}
+
 ## 任务
 请生成一个简洁的观看建议，严格按照以下JSON格式输出（不要有任何多余文字）：
 
@@ -634,7 +646,7 @@ ${truncatedSubtitle}
   "rating": "值得看/一般/不值得",
   "ratingReason": "一句话说明理由",
   "keyPoints": ["关键点1", "关键点2", "关键点3"],
-  "warning": "标题党/广告多/内容水/无（如果视频质量正常填无）",
+  "warning": "标题党/广告多/内容水/信息可能过时/无（如果视频质量正常填无）",
   "chapters": [
     {"time": "00:45", "title": "核心问题抛出"},
     {"time": "03:20", "title": "关键方法讲解"},
@@ -2843,6 +2855,13 @@ ${truncatedSubtitle}
               <div class="settings-row checkbox-row">
                 <label><input type="checkbox" id="setting-stream" checked /> 启用流式展示（更快看到内容）</label>
               </div>
+              <div class="settings-row">
+                <label>评级评判标准 <span style="font-size:11px;color:#999;font-weight:normal">（留空使用默认）</span></label>
+                <div>
+                  <textarea id="setting-rating-criteria" rows="6" placeholder="自定义 rating 评判标准，留空则使用默认规则..." style="width:100%;box-sizing:border-box;font-size:12px;font-family:monospace;resize:vertical"></textarea>
+                  <div style="text-align:right;font-size:11px;color:#999;margin-top:2px"><span id="setting-rating-criteria-count">0</span>/500 字</div>
+                </div>
+              </div>
             </div>
 
             <div class="settings-section">
@@ -3122,6 +3141,12 @@ ${truncatedSubtitle}
       panel.querySelector('#setting-model').value = config.llm.model || '';
       panel.querySelector('#setting-maxtokens').value = config.llm.maxTokens || '';
       panel.querySelector('#setting-stream').checked = config.llm.stream !== false;
+      const criteriaEl = panel.querySelector('#setting-rating-criteria');
+      criteriaEl.value = config.llm.ratingCriteria || '';
+      panel.querySelector('#setting-rating-criteria-count').textContent = criteriaEl.value.length;
+      criteriaEl.addEventListener('input', () => {
+        panel.querySelector('#setting-rating-criteria-count').textContent = criteriaEl.value.length;
+      });
       panel.querySelector('#setting-trigger').value = config.trigger.mode || 'hover';
       panel.querySelector('#setting-hoverdelay').value = config.trigger.hoverDelay || '';
       panel.querySelector('#setting-cancel-on-leave').checked = config.trigger.cancelOnMouseLeave !== false;
@@ -3176,6 +3201,7 @@ ${truncatedSubtitle}
         Config.set('llm.model', modelValue);
         Config.set('llm.maxTokens', parseInt(panel.querySelector('#setting-maxtokens').value) || 1500);
         Config.set('llm.stream', panel.querySelector('#setting-stream').checked);
+        Config.set('llm.ratingCriteria', panel.querySelector('#setting-rating-criteria').value.trim());
         Config.set('trigger.mode', panel.querySelector('#setting-trigger').value);
         Config.set('trigger.hoverDelay', parseInt(panel.querySelector('#setting-hoverdelay').value) || 800);
         Config.set('trigger.cancelOnMouseLeave', panel.querySelector('#setting-cancel-on-leave').checked);
