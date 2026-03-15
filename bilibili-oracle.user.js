@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         B站先知
 // @namespace    http://tampermonkey.net/
-// @version      1.1.0
+// @version      1.2.0
 // @description  看视频前先知道值不值得看。AI自动分析字幕，主页封面直出评级+概述+关键点，进度条标注时间轴
 // @author       Original Author + AI Enhanced
 // @match        *://www.bilibili.com/*
@@ -55,7 +55,8 @@
         hoverDelay: 800,    // 悬浮延迟(ms)
         autoPreload: false, // 是否自动预加载
         autoPreloadConcurrency: 2, // 自动预加载并发数
-        cancelOnMouseLeave: true
+        cancelOnMouseLeave: true,
+        abortCooldown: 10000    // abort后冷却期(ms)，防止反复悬停重复请求
       },
       // 显示配置
       display: {
@@ -106,7 +107,8 @@
           hoverDelay: this.get('trigger.hoverDelay'),
           autoPreload: this.get('trigger.autoPreload'),
           autoPreloadConcurrency: this.get('trigger.autoPreloadConcurrency') || 2,
-          cancelOnMouseLeave: this.get('trigger.cancelOnMouseLeave')
+          cancelOnMouseLeave: this.get('trigger.cancelOnMouseLeave'),
+          abortCooldown: this.get('trigger.abortCooldown') ?? 10000
         },
         display: {
           showInHomepage: this.get('display.showInHomepage'),
@@ -1035,6 +1037,8 @@ ${Config.get('llm.ratingCriteria') || DEFAULT_RATING_CRITERIA}
     processingBvids: new Set(),
     manuallyClosedCards: new WeakSet(),
     hoverTimers: new WeakMap(),
+    abortCooldownUntil: new WeakMap(), // card → timestamp，冷却期截止时间
+    resizeObservers: new WeakMap(),     // card → ResizeObserver，监听封面尺寸变化
     lastSummaryByBvid: new Map(),
     requestSeq: 0,
     activeRequests: new WeakMap(),
@@ -1082,6 +1086,11 @@ ${Config.get('llm.ratingCriteria') || DEFAULT_RATING_CRITERIA}
       if (state?.controller) {
         try {
           state.controller.abort();
+          // 记录冷却期截止时间
+          const cooldown = Config.getAll().trigger.abortCooldown;
+          if (cooldown > 0) {
+            this.abortCooldownUntil.set(card, Date.now() + cooldown);
+          }
         } catch (error) {
           console.warn('[B站AI总结] 中止卡片请求失败:', error?.message || error);
         }
@@ -1219,6 +1228,11 @@ ${Config.get('llm.ratingCriteria') || DEFAULT_RATING_CRITERIA}
           if (!this.canAutoOpen(card)) {
             return;
           }
+          // 冷却期检查：abort后短时间内不重新触发
+          const cooldownUntil = this.abortCooldownUntil.get(card);
+          if (cooldownUntil && Date.now() < cooldownUntil) {
+            return;
+          }
           // 进度条：200ms后显示，动画时长=hoverDelay-200ms
           this.startHoverProgress(card, triggerConfig.hoverDelay);
           hoverTimer = setTimeout(() => {
@@ -1230,17 +1244,19 @@ ${Config.get('llm.ratingCriteria') || DEFAULT_RATING_CRITERIA}
           this.clearHoverProgress(card);
           this.clearHoverTimer(card);
 
+          // 只有移到封面图内部才不触发hide（card范围过大，含标题/UP主等文字区）
+          const cover = this.getCoverEl(card);
           const nextTarget = event.relatedTarget;
-          if (nextTarget instanceof Node && card.contains(nextTarget)) {
+          if (cover && nextTarget instanceof Node && cover.contains(nextTarget)) {
             return;
           }
 
           setTimeout(() => {
-            if (!card.matches(':hover')) {
-              this.hideOverlay(card);
-              if (triggerConfig.cancelOnMouseLeave) {
-                this.cancelCardRequest(card);
-              }
+            // 检查封面图是否仍在hover（而非整个card），避免鼠标在标题区时overlay常驻
+            if (cover && cover.matches(':hover')) return;
+            this.hideOverlay(card);
+            if (triggerConfig.cancelOnMouseLeave) {
+              this.cancelCardRequest(card);
             }
           }, 150);
         });
@@ -1260,6 +1276,25 @@ ${Config.get('llm.ratingCriteria') || DEFAULT_RATING_CRITERIA}
           this.setDismissedVisual(card, false);
           this.triggerSummary(bvid, card, { force: true });
         });
+      }
+
+      // 监听封面尺寸变化，自动重新渲染overlay内容密度和字体
+      const coverEl = this.getCoverEl(card);
+      if (coverEl && typeof ResizeObserver !== 'undefined') {
+        const ro = new ResizeObserver(() => {
+          if (!card.isConnected) { ro.disconnect(); return; }
+          const memoKey = this.buildSummaryMemoKey(bvid);
+          const memo = this.lastSummaryByBvid.get(memoKey);
+          if (!memo) return;
+          const overlay = coverEl.querySelector('.ai-cover-overlay');
+          if (!overlay) return;
+          // visible时完整重渲染内容密度（字体由CSS cqh自动响应，无需JS同步）
+          if (overlay.classList.contains('ai-cover-overlay--visible')) {
+            this.renderOverlaySummary(card, memo, bvid);
+          }
+        });
+        ro.observe(coverEl);
+        this.resizeObservers.set(card, ro);
       }
     },
 
@@ -1318,12 +1353,6 @@ ${Config.get('llm.ratingCriteria') || DEFAULT_RATING_CRITERIA}
       // 用户悬停时把该 bvid 提升到队列优先
       if (!force && !silent) PreloadQueue.prioritize(bvid);
 
-      // overlay 已显示且有内容时不重复渲染（silent模式不检查overlay）
-      if (!force && !silent) {
-        const cover = this.getCoverEl(card);
-        const overlayEl = cover?.querySelector('.ai-cover-overlay');
-        if (overlayEl?.classList.contains('ai-cover-overlay--visible') && !overlayEl?.classList.contains('ai-ov--loading')) return;
-      }
 
       const memoKey = this.buildSummaryMemoKey(bvid);
       const memoSummary = this.lastSummaryByBvid.get(memoKey);
@@ -1923,36 +1952,26 @@ ${Config.get('llm.ratingCriteria') || DEFAULT_RATING_CRITERIA}
       const overlay = this.getOrCreateOverlay(card);
       if (!overlay) return;
       const cover = this.getCoverEl(card);
-      const coverH = cover ? cover.offsetHeight : 0;
-
       const ratingColorMap = { '值得看': '#4caf50', '一般': '#ff9800', '不值得': '#f44336' };
       const ratingColor = ratingColorMap[summary.rating] || '#ff9800';
 
-      // 根据封面高度决定内容密度
-      const showOverview = coverH >= 90;
-      const showKeyPoints = coverH >= 120;
-      const showChapters = coverH >= 140;
-      const maxKeyPoints = coverH >= 160 ? 3 : 2;
-      const maxChapters = 4;
-
-      const keyPointsHtml = showKeyPoints && summary.keyPoints && summary.keyPoints.length > 0
-        ? `<div class="ai-ov-keypoints">${summary.keyPoints.slice(0, maxKeyPoints).map(p => `<div class="ai-ov-kp">• ${p}</div>`).join('')}</div>`
+      // 始终渲染所有内容，由CSS Container Query根据封面尺寸控制显隐
+      const keyPointsHtml = summary.keyPoints && summary.keyPoints.length > 0
+        ? `<div class="ai-ov-keypoints">${summary.keyPoints.slice(0, 3).map(p => `<div class="ai-ov-kp">• ${p}</div>`).join('')}</div>`
         : '';
 
-      const chaptersHtml = showChapters && summary.chapters && summary.chapters.length > 0
-        ? `<div class="ai-ov-chapters">${summary.chapters.slice(0, maxChapters).map(c => { const t = c.title && c.title.length > 14 ? c.title.slice(0, 14) + '…' : (c.title || ''); return `<button class="ai-ov-chap" type="button" data-bvid="${bvid}" data-second="${c.second}"><span class="ai-ov-chap-time" style="color:${ratingColor}">${c.time}</span><span class="ai-ov-chap-title">${t}</span></button>`; }).join('')}</div>`
+      const chaptersHtml = summary.chapters && summary.chapters.length > 0
+        ? `<div class="ai-ov-chapters">${summary.chapters.slice(0, 4).map(c => { const t = c.title && c.title.length > 14 ? c.title.slice(0, 14) + '…' : (c.title || ''); return `<button class="ai-ov-chap" type="button" data-bvid="${bvid}" data-second="${c.second}"><span class="ai-ov-chap-time" style="color:${ratingColor}">${c.time}</span><span class="ai-ov-chap-title">${t}</span></button>`; }).join('')}</div>`
         : '';
 
       overlay.innerHTML = `
         <div class="ai-ov-content">
           <div class="ai-ov-top-row">
             <div class="ai-ov-rating" style="color:${ratingColor}">${summary.rating}</div>
-
           </div>
-          ${showOverview ? `<div class="ai-ov-overview">${summary.overview}</div>` : ''}
+          <div class="ai-ov-overview">${summary.overview || ''}</div>
           ${keyPointsHtml}
           ${chaptersHtml}
-
         </div>
       `;
       overlay.classList.add('ai-cover-overlay--visible');
@@ -2663,8 +2682,18 @@ ${Config.get('llm.ratingCriteria') || DEFAULT_RATING_CRITERIA}
           padding: 8px;
           box-sizing: border-box;
           font-family: "PingFang SC", "HarmonyOS_Regular", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+          container-type: size;
         }
         .ai-cover-overlay--visible { opacity: 1; pointer-events: auto; }
+        .ai-ov-content {
+          flex: 0 1 auto;
+          min-height: 0;
+          overflow: hidden;
+          width: 100%;
+          display: flex;
+          flex-direction: column;
+          justify-content: flex-start;
+        }
         .ai-ov-top-row {
           display: flex;
           align-items: center;
@@ -2692,7 +2721,7 @@ ${Config.get('llm.ratingCriteria') || DEFAULT_RATING_CRITERIA}
         }
         .ai-ov-btn:hover { background: rgba(255,255,255,.42); border-color: rgba(255,255,255,.6); }
         .ai-ov-rating {
-          font-size: 13px;
+          font-size: clamp(9px, 8cqh, 14px);
           font-weight: 700;
           color: #fff;
           margin-bottom: 0;
@@ -2706,28 +2735,30 @@ ${Config.get('llm.ratingCriteria') || DEFAULT_RATING_CRITERIA}
         .ai-ov-rating-dot.normal { background: #faad14; }
         .ai-ov-rating-dot.bad { background: #ff4d4f; }
         .ai-ov-overview {
-          font-size: 11px;
+          flex-shrink: 1;
+          min-height: 0;
+          font-size: clamp(8px, 6cqh, 12px);
           color: rgba(255,255,255,.88);
           line-height: 1.5;
+          overflow: hidden;
           display: -webkit-box;
           -webkit-line-clamp: 2;
           -webkit-box-orient: vertical;
-          overflow: hidden;
           margin-bottom: 5px;
           text-shadow: 0 1px 4px rgba(0,0,0,.9), 0 0 8px rgba(0,0,0,.6);
         }
-        .ai-ov-keypoints { margin-bottom: 5px; }
+        .ai-ov-keypoints { margin-bottom: 5px; flex-shrink: 1; min-height: 0; overflow: hidden; }
         .ai-ov-kp {
-          font-size: 10px;
+          font-size: clamp(7px, 5.5cqh, 11px);
           color: rgba(255,255,255,.78);
           line-height: 1.4;
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
         }
-        .ai-ov-chapters { display: flex; flex-direction: column; gap: 2px; margin-bottom: 5px; }
-        .ai-ov-chap-time { font-size: 10px; font-weight: 600; color: #7ecfef; min-width: 36px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
-        .ai-ov-chap-title { font-size: 11px; color: rgba(255,255,255,.85); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+        .ai-ov-chapters { display: flex; flex-direction: column; gap: 2px; margin-bottom: 5px; flex-shrink: 1; min-height: 0; overflow: hidden; }
+        .ai-ov-chap-time { font-size: clamp(7px, 5.5cqh, 11px); font-weight: 600; color: #7ecfef; min-width: 36px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+        .ai-ov-chap-title { font-size: clamp(7px, 6cqh, 12px); color: rgba(255,255,255,.85); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
         .ai-ov-chap {
           display: flex;
           align-items: center;
@@ -2741,8 +2772,13 @@ ${Config.get('llm.ratingCriteria') || DEFAULT_RATING_CRITERIA}
           text-align: left;
           transition: background 0.15s;
           overflow: hidden;
+          flex-shrink: 0;
         }
         .ai-ov-chap:hover { background: rgba(255,255,255,.22); }
+        /* Container Query：根据封面高度自动控制内容块显隐 */
+        @container (max-height: 89px) { .ai-ov-overview, .ai-ov-keypoints, .ai-ov-chapters { display: none; } }
+        @container (min-height: 90px) and (max-height: 119px) { .ai-ov-keypoints, .ai-ov-chapters { display: none; } }
+        @container (min-height: 120px) and (max-height: 139px) { .ai-ov-chapters { display: none; } }
         .ai-ov-expand {
           position: absolute;
           right: 8px;
@@ -2879,6 +2915,11 @@ ${Config.get('llm.ratingCriteria') || DEFAULT_RATING_CRITERIA}
               </div>
               <div class="settings-row checkbox-row" id="hover-cancel-row">
                 <label><input type="checkbox" id="setting-cancel-on-leave" checked /> 悬浮移出时取消请求</label>
+              </div>
+              <div class="settings-row" id="abort-cooldown-row">
+                <label>取消后冷却时间(ms)</label>
+                <input type="number" id="setting-abort-cooldown" placeholder="3000" min="0" max="30000" />
+                <span style="font-size:11px;color:#999;margin-left:6px">移出后再移入的最短间隔，防止重复请求</span>
               </div>
               <div class="settings-row checkbox-row">
                 <label><input type="checkbox" id="setting-autopreload" /> 自动批量总结（按页面顺序逐个分析）</label>
@@ -3150,6 +3191,7 @@ ${Config.get('llm.ratingCriteria') || DEFAULT_RATING_CRITERIA}
       panel.querySelector('#setting-trigger').value = config.trigger.mode || 'hover';
       panel.querySelector('#setting-hoverdelay').value = config.trigger.hoverDelay || '';
       panel.querySelector('#setting-cancel-on-leave').checked = config.trigger.cancelOnMouseLeave !== false;
+      panel.querySelector('#setting-abort-cooldown').value = config.trigger.abortCooldown ?? 10000;
       const autoPreload = config.trigger.autoPreload;
       panel.querySelector('#setting-autopreload').checked = autoPreload;
       panel.querySelector('#autopreload-concurrency-row').style.display = autoPreload ? 'block' : 'none';
@@ -3205,6 +3247,7 @@ ${Config.get('llm.ratingCriteria') || DEFAULT_RATING_CRITERIA}
         Config.set('trigger.mode', panel.querySelector('#setting-trigger').value);
         Config.set('trigger.hoverDelay', parseInt(panel.querySelector('#setting-hoverdelay').value) || 800);
         Config.set('trigger.cancelOnMouseLeave', panel.querySelector('#setting-cancel-on-leave').checked);
+        Config.set('trigger.abortCooldown', Math.max(0, parseInt(panel.querySelector('#setting-abort-cooldown').value) || 0));
         const newAutoPreload = panel.querySelector('#setting-autopreload').checked;
         Config.set('trigger.autoPreload', newAutoPreload);
         Config.set('trigger.autoPreloadConcurrency', Math.min(5, Math.max(1, parseInt(panel.querySelector('#setting-autopreload-concurrency').value) || 2)));
